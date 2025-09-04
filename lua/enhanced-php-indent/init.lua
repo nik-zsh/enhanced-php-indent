@@ -1,4 +1,4 @@
--- enhanced-php-indent.nvim - Enhanced Case/Break Handling
+-- enhanced-php-indent.nvim - Simple & Reliable
 local M = {}
 
 M.config = {
@@ -7,27 +7,33 @@ M.config = {
   vintage_case_default_indent = false,
 }
 
--- Helper function to find switch statement and its indent level
-local function find_switch_indent(lnum)
+-- Simple switch detection - just look for "switch" keyword
+local function is_in_switch_block(lnum)
   local search_lnum = lnum - 1
-  local brace_count = 0
+  local switch_found = false
+  local brace_level = 0
 
-  while search_lnum > 0 do
+  while search_lnum > 0 and search_lnum > (lnum - 50) do  -- Don't search too far
     local line = vim.fn.getline(search_lnum)
     local line_clean = vim.trim(line)
 
-    -- Count braces to stay in same block level
-    local open_braces = select(2, line_clean:gsub("{", ""))
-    local close_braces = select(2, line_clean:gsub("}", ""))
-    brace_count = brace_count + close_braces - open_braces
+    -- Count braces to track block level
+    for char in line_clean:gmatch(".") do
+      if char == "}" then
+        brace_level = brace_level + 1
+      elseif char == "{" then
+        brace_level = brace_level - 1
+      end
+    end
 
-    -- Found switch at our block level
-    if brace_count == 0 and line_clean:find("switch%s*%(") then
+    -- Found switch at our level
+    if brace_level == 0 and line_clean:find("switch%s*%(") then
+      switch_found = true
       return vim.fn.indent(search_lnum)
     end
 
-    -- Stop if we go too far up in block structure
-    if brace_count > 0 then
+    -- Stop if we've gone up a block level
+    if brace_level > 0 then
       break
     end
 
@@ -37,31 +43,7 @@ local function find_switch_indent(lnum)
   return nil
 end
 
--- Helper function to find the most recent case/default statement
-local function find_recent_case_indent(lnum)
-  local search_lnum = lnum - 1
-
-  while search_lnum > 0 do
-    local line = vim.fn.getline(search_lnum)
-    local line_clean = vim.trim(line)
-
-    -- Found case or default
-    if line_clean:find("^case%s.+:") or line_clean:find("^default%s*:") then
-      return vim.fn.indent(search_lnum)
-    end
-
-    -- Stop if we hit switch or closing brace
-    if line_clean:find("switch%s*%(") or line_clean:find("^}") then
-      break
-    end
-
-    search_lnum = search_lnum - 1
-  end
-
-  return nil
-end
-
--- Enhanced indent function with proper case/break handling
+-- SIMPLE indent function
 function _G.EnhancedPhpIndent()
   local lnum = vim.v.lnum
   local line = vim.fn.getline(lnum)
@@ -73,7 +55,7 @@ function _G.EnhancedPhpIndent()
   local line_clean = vim.trim(line)
   local prev_clean = vim.trim(prev_line)
 
-  -- Empty line in array brackets - ENHANCED FEATURE  
+  -- ENHANCED ARRAY FEATURE (working)
   if line_clean == "" then
     if prev_clean:find("%[%s*$") then
       local next_line = vim.fn.getline(lnum + 1)
@@ -83,7 +65,6 @@ function _G.EnhancedPhpIndent()
     end
   end
 
-  -- Closing brackets align with opening
   if line_clean:find("^%]") and prev_clean:find("%[%s*$") then
     return prev_indent
   end
@@ -93,55 +74,43 @@ function _G.EnhancedPhpIndent()
     return math.max(prev_indent - sw, 0)
   end
 
-  -- ENHANCED SWITCH/CASE/BREAK HANDLING
+  -- SIMPLE SWITCH/CASE LOGIC
 
-  -- Case and default statements
+  -- Case/default statements: indent from switch
   if line_clean:find("^case%s.+:") or line_clean:find("^default%s*:") then
-    local switch_indent = find_switch_indent(lnum)
-    if switch_indent then
-      if M.config.vintage_case_default_indent then
-        return switch_indent  -- Vintage: case at switch level
-      else
-        return switch_indent + sw  -- Modern: case indented from switch
-      end
+    local switch_indent = is_in_switch_block(lnum)
+    if switch_indent ~= nil then
+      -- FIXED: Always indent case from switch
+      return switch_indent + sw
+    else
+      -- Fallback: indent from previous line
+      return prev_indent
     end
-    return prev_indent  -- Fallback
   end
 
-  -- Break statements - align with case content
+  -- Break statements: same level as case content
   if line_clean:find("^break%s*;") then
-    local case_indent = find_recent_case_indent(lnum)
-    if case_indent then
-      return case_indent + sw  -- Break aligns with case content
+    -- Simple logic: if previous non-blank line is case, indent from it
+    if prev_clean:find("^case%s.+:") or prev_clean:find("^default%s*:") then
+      return prev_indent + sw
+    else
+      -- Otherwise, same as previous line
+      return prev_indent
     end
   end
 
-  -- Statements immediately after case/default
+  -- Content after case/default
   if prev_clean:find("^case%s.+:") or prev_clean:find("^default%s*:") then
     return prev_indent + sw
   end
 
-  -- Other statements inside switch block
-  local switch_indent = find_switch_indent(lnum)
-  if switch_indent then
-    local case_indent = find_recent_case_indent(lnum)
-    if case_indent then
-      -- We're inside a case block
-      if not line_clean:find("^case%s") and not line_clean:find("^default%s*:") and not line_clean:find("^}") then
-        return case_indent + sw
-      end
-    end
-  end
-
-  -- Indent after opening braces/brackets/parens
+  -- Basic indentation rules (working)
   if prev_clean:find("{%s*$") or prev_clean:find("%[%s*$") or prev_clean:find("%(%s*$") then
     return prev_indent + sw
   end
 
-  -- Basic control structures
   if prev_clean:find("^if%s*%(") or prev_clean:find("^while%s*%(") or 
-     prev_clean:find("^for%s*%(") or prev_clean:find("^function%s") or
-     prev_clean:find("^class%s") then
+     prev_clean:find("^for%s*%(") or prev_clean:find("^function%s") then
     return prev_indent + sw
   end
 
