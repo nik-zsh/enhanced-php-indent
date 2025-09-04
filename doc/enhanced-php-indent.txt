@@ -1,0 +1,122 @@
+*enhanced-php-indent.txt*   Enhanced PHP indentation for Neovim
+
+ENHANCED PHP INDENT                                *enhanced-php-indent*
+
+A comprehensive PHP indentation plugin that combines the robustness of the 
+official php.vim with modern enhancements and real-time features.
+
+==============================================================================
+CONTENTS                                    *enhanced-php-indent-contents*
+
+1. Introduction ........................ |enhanced-php-indent-introduction|
+2. Requirements ........................ |enhanced-php-indent-requirements|
+3. Installation ........................ |enhanced-php-indent-installation|
+4. Configuration ....................... |enhanced-php-indent-configuration|
+5. Usage ............................... |enhanced-php-indent-usage|
+6. Commands ............................ |enhanced-php-indent-commands|
+7. Examples ............................ |enhanced-php-indent-examples|
+
+==============================================================================
+1. INTRODUCTION                         *enhanced-php-indent-introduction*
+
+Enhanced PHP Indent provides intelligent indentation for PHP files with 
+features like:
+
+• Smart array handling with double-indentation for empty arrays
+• Enhanced switch/case statement indentation  
+• Method chaining support for Laravel-style code
+• Real-time indentation fixes
+• PSR-12 compliance support
+• Configurable options for different coding standards
+
+==============================================================================
+2. REQUIREMENTS                         *enhanced-php-indent-requirements*
+
+• Neovim >= 0.7.0
+• PHP syntax highlighting enabled
+
+==============================================================================
+3. INSTALLATION                         *enhanced-php-indent-installation*
+
+Using lazy.nvim: >lua
+    {
+      "your-username/enhanced-php-indent.nvim",
+      ft = "php",
+      config = function()
+        require("enhanced-php-indent").setup()
+      end,
+    }
+<
+
+Using packer.nvim: >lua
+    use {
+      "your-username/enhanced-php-indent.nvim", 
+      ft = "php",
+      config = function()
+        require("enhanced-php-indent").setup()
+      end,
+    }
+<
+
+==============================================================================
+4. CONFIGURATION                        *enhanced-php-indent-configuration*
+
+The plugin can be configured by passing options to the setup function:
+
+>lua
+    require("enhanced-php-indent").setup({
+      -- Options with their defaults
+      default_indenting = 0,                      -- Extra base indentation
+      braces_at_code_level = false,               -- Brace placement style
+      indent_function_call_parameters = false,    -- Indent function parameters
+      enable_real_time_indent = true,             -- Real-time features
+      autoformat_comment = true,                  -- Auto-format comments
+      -- ... see full list below
+    })
+<
+
+Full configuration options:                     *enhanced-php-indent-options*
+
+• |enhanced-php-indent.default_indenting|
+• |enhanced-php-indent.braces_at_code_level|  
+• |enhanced-php-indent.indent_function_call_parameters|
+• |enhanced-php-indent.indent_function_declaration_parameters|
+• |enhanced-php-indent.enable_real_time_indent|
+• |enhanced-php-indent.autoformat_comment|
+• |enhanced-php-indent.vintage_case_default_indent|
+• |enhanced-php-indent.no_arrow_matching|
+• |enhanced-php-indent.outdent_php_escape|
+• |enhanced-php-indent.remove_cr_when_unix|
+
+==============================================================================
+5. USAGE                                *enhanced-php-indent-usage*
+
+The plugin works automatically for PHP files. No manual intervention needed.
+
+Key features:
+• Automatic double-indentation for blank lines in empty arrays
+• Smart switch/case indentation 
+• Method chaining alignment
+• Real-time indentation corrections
+
+==============================================================================
+6. EXAMPLES                             *enhanced-php-indent-examples*
+
+PSR-12 setup: >lua
+    require("enhanced-php-indent").setup({
+      indent_function_call_parameters = true,
+      indent_function_declaration_parameters = true,
+      braces_at_code_level = false,
+    })
+<
+
+Laravel setup: >lua  
+    require("enhanced-php-indent").setup({
+      braces_at_code_level = true,
+      no_arrow_matching = false,  -- Enable method chaining
+      enable_real_time_indent = true,
+    })
+<
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:
