@@ -1,53 +1,132 @@
 -- enhanced-php-indent.nvim
--- A comprehensive PHP indentation plugin for Neovim
--- Combines official php.vim robustness with modern enhancements
-
+-- A working PHP indentation plugin for Neovim
 local M = {}
 
--- Plugin configuration with defaults
+-- Configuration with defaults
 M.config = {
-  -- Default indenting level (0 = no extra indentation)
   default_indenting = 0,
-
-  -- Outdent single-line comments (0 = disabled)
-  outdent_sl_comments = 0,
-
-  -- Put braces at code level instead of indented
   braces_at_code_level = false,
-
-  -- Auto-format comments
   autoformat_comment = true,
-
-  -- Outdent PHP escape sequences
   outdent_php_escape = true,
-
-  -- Disable arrow matching indentation
   no_arrow_matching = false,
-
-  -- Use vintage case/default indentation
   vintage_case_default_indent = false,
-
-  -- Indent function call parameters
   indent_function_call_parameters = false,
-
-  -- Indent function declaration parameters
   indent_function_declaration_parameters = false,
-
-  -- Remove CR characters when on Unix
   remove_cr_when_unix = false,
-
-  -- Enable real-time auto-indentation
   enable_real_time_indent = true,
 }
 
--- Setup function called by users
-function M.setup(opts)
-  -- Merge user options with defaults
-  M.config = vim.tbl_deep_extend("force", M.config, opts or {})
+-- Global indent function (MUST be global for indentexpr)
+function _G.EnhancedPhpIndent()
+  local config = require('enhanced-php-indent').config
+  local lnum = vim.v.lnum
+  local line = vim.fn.getline(lnum)
+  local prev_lnum = vim.fn.prevnonblank(lnum - 1)
+  local prev_line = prev_lnum > 0 and vim.fn.getline(prev_lnum) or ""
+  local prev_indent = prev_lnum > 0 and vim.fn.indent(prev_lnum) or 0
+  local sw = vim.fn.shiftwidth()
 
-  -- Set global variables for the indent script
+  -- Handle blank lines inside array brackets (ENHANCED FEATURE)
+  if vim.fn.match(line, '^\s*$') >= 0 and prev_lnum > 0 then
+    if vim.fn.match(prev_line, '\[\s*$') >= 0 then
+      -- Look ahead for closing bracket
+      local next_lnum = lnum + 1
+      while next_lnum <= vim.fn.line('$') do
+        local next_line = vim.fn.getline(next_lnum)
+        if vim.fn.match(next_line, '^\s*$') >= 0 then
+          next_lnum = next_lnum + 1
+        else
+          if vim.fn.match(next_line, '^\s*\]') >= 0 then
+            return prev_indent + 2 * sw  -- Double indent for empty arrays
+          end
+          break
+        end
+      end
+    end
+  end
+
+  -- Align closing bracket with opening bracket
+  if vim.fn.match(line, '^\s*\]\s*$') >= 0 and prev_lnum > 0 then
+    if vim.fn.match(prev_line, '\[\s*$') >= 0 then
+      return prev_indent
+    end
+  end
+
+  -- Dedent closing braces/brackets/parens
+  if vim.fn.match(line, '^\s*[\]})]') >= 0 then
+    return math.max(prev_indent - sw, 0)
+  end
+
+  -- Switch statement handling
+  if prev_lnum > 0 and vim.fn.match(prev_line, '^\s*switch\s*(.*{\s*$') >= 0 then
+    return prev_indent + sw
+  end
+
+  -- Case/default labels
+  if vim.fn.match(line, '^\s*case\s\+.\+:') >= 0 or vim.fn.match(line, '^\s*default\s*:') >= 0 then
+    -- Find switch opening brace
+    local switch_lnum = vim.fn.search('{', 'bnW')
+    if switch_lnum > 0 then
+      local base_indent = vim.fn.indent(switch_lnum)
+      if not config.vintage_case_default_indent then
+        return base_indent + sw
+      else
+        return base_indent
+      end
+    end
+  end
+
+  -- Indent after case/default
+  if prev_lnum > 0 then
+    if vim.fn.match(prev_line, '^\s*case\s\+.\+:') >= 0 or vim.fn.match(prev_line, '^\s*default\s*:') >= 0 then
+      return prev_indent + sw
+    end
+  end
+
+  -- Function parameters
+  if config.indent_function_call_parameters or config.indent_function_declaration_parameters then
+    if vim.fn.match(prev_line, '(') >= 0 and vim.fn.match(prev_line, ')') < 0 then
+      return prev_indent + sw
+    end
+  end
+
+  -- Indent after opening braces/brackets/parens
+  if vim.fn.match(prev_line, '{\s*$') >= 0 or vim.fn.match(prev_line, '\[\s*$') >= 0 or vim.fn.match(prev_line, '(\s*$') >= 0 then
+    return prev_indent + sw
+  end
+
+  -- Control structures
+  if vim.fn.match(prev_line, '^\s*\(if\|while\|for\|foreach\|function\|class\|interface\)\s*(') >= 0 then
+    return prev_indent + sw
+  end
+
+  -- PHP tags
+  if config.outdent_php_escape then
+    if vim.fn.match(line, '^\s*?>') >= 0 or vim.fn.match(line, '^\s*<?php') >= 0 or vim.fn.match(line, '^\s*<?') >= 0 then
+      return 0
+    end
+  end
+
+  -- Arrow method chaining
+  if not config.no_arrow_matching then
+    if vim.fn.match(prev_line, '->') >= 0 then
+      if vim.fn.match(line, '^\s*->') >= 0 then
+        return prev_indent
+      end
+    end
+  end
+
+  -- Default: keep previous indentation
+  return prev_indent
+end
+
+-- Setup function
+function M.setup(opts)
+  opts = opts or {}
+  M.config = vim.tbl_deep_extend("force", M.config, opts)
+
+  -- Set global variables for compatibility
   vim.g.PHP_default_indenting = M.config.default_indenting
-  vim.g.PHP_outdentSLComments = M.config.outdent_sl_comments
   vim.g.PHP_BracesAtCodeLevel = M.config.braces_at_code_level and 1 or 0
   vim.g.PHP_autoformatcomment = M.config.autoformat_comment and 1 or 0
   vim.g.PHP_outdentphpescape = M.config.outdent_php_escape and 1 or 0
@@ -55,34 +134,9 @@ function M.setup(opts)
   vim.g.PHP_vintage_case_default_indent = M.config.vintage_case_default_indent and 1 or 0
   vim.g.PHP_IndentFunctionCallParameters = M.config.indent_function_call_parameters and 1 or 0
   vim.g.PHP_IndentFunctionDeclarationParameters = M.config.indent_function_declaration_parameters and 1 or 0
-  vim.g.PHP_removeCRwhenUnix = M.config.remove_cr_when_unix and 1 or 0
 
-  -- Load the main indent functionality
-  require('enhanced-php-indent.indent').setup(M.config)
+  -- Setup indent for PHP files
+  require('enhanced-php-indent.indent').setup()
 end
-
--- Allow plugin to work without explicit setup call
--- (Uses default configuration)
-local function auto_setup()
-  if vim.g.enhanced_php_indent_loaded then
-    return
-  end
-
-  -- Check if user wants to disable auto-setup
-  if vim.g.enhanced_php_indent_disable_auto_setup then
-    return
-  end
-
-  -- Auto-setup with defaults
-  M.setup({})
-  vim.g.enhanced_php_indent_loaded = true
-end
-
--- Auto-setup on PHP filetype
-vim.api.nvim_create_autocmd("FileType", {
-  pattern = "php",
-  callback = auto_setup,
-  group = vim.api.nvim_create_augroup("EnhancedPhpIndentAutoSetup", { clear = true }),
-})
 
 return M
