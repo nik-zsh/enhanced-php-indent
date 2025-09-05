@@ -339,7 +339,7 @@ nvim test-files/test-comprehensive.php
 
 ## 📄 License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+UNLICENSE License - see [LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 
