@@ -1,6 +1,6 @@
 # enhanced-php-indent.nvim
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: Unlicense](https://img.shields.io/badge/License-Unlicense-blue.svg)](https://unlicense.org/)
 [![Neovim](https://img.shields.io/badge/Neovim-0.7+-green.svg)](https://neovim.io)
 
 A comprehensive PHP indentation plugin for Neovim that combines the robustness of the official `php.vim` indent script with modern enhancements and real-time features.
