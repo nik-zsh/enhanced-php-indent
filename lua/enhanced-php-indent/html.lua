@@ -120,7 +120,7 @@ function M.get_indent(lnum, config)
     local base_indent = config.default_indenting or 0
 
     if config.html_debug then
-        print("    HTML: processing '" .. line_clean .. "'")
+        print("    HTML: processing line '" .. line_clean .. "' (prev_indent=" .. prev_indent .. ")")
     end
 
     -- Handle empty lines
@@ -128,9 +128,12 @@ function M.get_indent(lnum, config)
         return prev_indent
     end
 
-    -- Handle PHP code in HTML context (preserve PHP indentation)
+    -- IMPORTANT: Don't process PHP code (this should be handled by context detection)
     if line_clean:find("^%s*<%?") or line_clean:find("^%s*%?>") then
-        return prev_indent
+        if config.html_debug then
+            print("    HTML: skipping PHP code")
+        end
+        return nil -- Let PHP indenter handle this
     end
 
     -- Handle HTML comments
@@ -177,7 +180,7 @@ function M.get_indent(lnum, config)
             if prev_tag_name and prev_tag_type == "opening" then
                 if is_block_tag(prev_tag_name, config) and not is_inline_tag(prev_tag_name, config) then
                     if config.html_debug then
-                        print("    HTML: content after opening block tag " .. prev_tag_name)
+                        print("    HTML: content after opening block tag " .. prev_tag_name .. ", indenting")
                     end
                     return vim.fn.indent(prev_lnum) + sw + base_indent
                 end
@@ -188,7 +191,7 @@ function M.get_indent(lnum, config)
     -- Handle opening tags
     if tag_name and tag_type == "opening" then
         if config.html_debug then
-            print("    HTML: opening tag " .. tag_name)
+            print("    HTML: opening tag " .. tag_name .. ", maintaining indent")
         end
         return prev_indent
     end
@@ -199,6 +202,9 @@ function M.get_indent(lnum, config)
     end
 
     -- Default: maintain previous indentation
+    if config.html_debug then
+        print("    HTML: default case, maintaining prev_indent=" .. prev_indent)
+    end
     return prev_indent
 end
 
