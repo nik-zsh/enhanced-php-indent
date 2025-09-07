@@ -1,13 +1,14 @@
--- CSS indentation for enhanced-php-indent.nvim (IMPROVED - better brace handling)
+-- CSS indentation for enhanced-php-indent.nvim (ROBUST)
 local M = {}
 
 -- Check if line is a CSS selector
 local function is_selector(line_clean)
-  -- More accurate selector detection
+  if line_clean == "" then return false end
+
   if line_clean:match('^[%w%.#:%-%[%]%s,>+~*]+%s*{?%s*$') and 
      not line_clean:match(';%s*$') and
      not line_clean:match('^%s*}') and
-     not line_clean:match('^[%w%-]+%s*:') then -- Not a property
+     not line_clean:match('^[%w%-]+%s*:') then
     return true
   end
   return false
@@ -15,11 +16,13 @@ end
 
 -- Check if line is a CSS property
 local function is_property(line_clean)
+  if line_clean == "" then return false end
   return line_clean:match('^[%w%-]+%s*:%s*') ~= nil
 end
 
--- Check if line is an at-rule (@media, @keyframes, etc.)
+-- Check if line is an at-rule
 local function is_at_rule(line_clean)
+  if line_clean == "" then return false end
   return line_clean:match('^@[%w%-]+') ~= nil
 end
 
@@ -31,6 +34,8 @@ local function find_opening_brace(lnum)
 
   while search_lnum > 0 and brace_count > 0 and (lnum - search_lnum) < max_search do
     local line = vim.fn.getline(search_lnum)
+    if not line then break end
+
     local line_clean = vim.trim(line)
 
     if line_clean ~= "" then
@@ -52,9 +57,11 @@ local function find_opening_brace(lnum)
   return nil
 end
 
--- IMPROVED: Main CSS indentation function with better brace handling
+-- Main CSS indentation function with debugging
 function M.get_indent(lnum, config)
   local line = vim.fn.getline(lnum)
+  if not line then return nil end
+
   local line_clean = vim.trim(line)
   local prev_lnum = vim.fn.prevnonblank(lnum - 1)
   local prev_line = prev_lnum > 0 and vim.fn.getline(prev_lnum) or ""
@@ -63,26 +70,31 @@ function M.get_indent(lnum, config)
   local sw = vim.fn.shiftwidth()
   local base_indent = config.default_indenting or 0
 
-  -- Handle empty lines - IMPROVED: inherit from context
+  if config.frontend_debug then
+    print("    CSS processing line: '" .. line_clean .. "'")
+  end
+
+  -- Handle empty lines
   if line_clean == "" then
     -- Check if we're inside a CSS rule block
     local search_lnum = prev_lnum
     local brace_count = 0
 
     while search_lnum > 0 and search_lnum > (lnum - 20) do
-      local search_line = vim.trim(vim.fn.getline(search_lnum))
-      for char in search_line:gmatch('.') do
-        if char == '}' then brace_count = brace_count - 1
-        elseif char == '{' then brace_count = brace_count + 1
+      local search_line = vim.fn.getline(search_lnum)
+      if search_line then
+        local search_clean = vim.trim(search_line)
+        for char in search_clean:gmatch('.') do
+          if char == '}' then brace_count = brace_count - 1
+          elseif char == '{' then brace_count = brace_count + 1
+          end
         end
-      end
 
-      if brace_count > 0 then
-        -- We're inside a rule, maintain the indentation of properties
-        return prev_indent
-      elseif search_line:match('{%s*$') then
-        -- Previous line opened a block, indent for properties
-        return vim.fn.indent(search_lnum) + sw + base_indent
+        if brace_count > 0 then
+          return prev_indent + sw + base_indent
+        elseif search_clean:match('{%s*$') then
+          return vim.fn.indent(search_lnum) + sw + base_indent
+        end
       end
 
       search_lnum = search_lnum - 1
@@ -101,84 +113,81 @@ function M.get_indent(lnum, config)
     end
   end
 
-  -- IMPROVED: Handle properties inside rules with better detection
+  -- Handle properties inside rules
   if is_property(line_clean) then
-    -- Look backwards to find the containing selector
+    if config.frontend_debug then
+      print("    CSS property detected: " .. line_clean)
+    end
+
     local search_lnum = prev_lnum
     local search_limit = math.max(1, lnum - 50)
 
     while search_lnum >= search_limit do
-      local search_line = vim.trim(vim.fn.getline(search_lnum))
+      local search_line = vim.fn.getline(search_lnum)
+      if search_line then
+        local search_clean = vim.trim(search_line)
 
-      -- Found opening brace - indent from it
-      if search_line:match('{%s*$') then
-        return vim.fn.indent(search_lnum) + sw + base_indent
-      end
+        if search_clean:match('{%s*$') then
+          return vim.fn.indent(search_lnum) + sw + base_indent
+        end
 
-      -- Found selector - indent from it
-      if is_selector(search_line) or is_at_rule(search_line) then
-        return vim.fn.indent(search_lnum) + sw + base_indent
+        if is_selector(search_clean) or is_at_rule(search_clean) then
+          return vim.fn.indent(search_lnum) + sw + base_indent
+        end
       end
 
       search_lnum = search_lnum - 1
     end
 
-    -- Fallback
     return prev_indent + sw + base_indent
   end
 
-  -- IMPROVED: Handle content after opening braces
+  -- Handle content after opening braces
   if prev_line_clean:match('{%s*$') then
+    if config.frontend_debug then
+      print("    CSS content after opening brace")
+    end
     return prev_indent + sw + base_indent
   end
 
-  -- Handle selectors (including the line that will have opening brace)
+  -- Handle selectors
   if is_selector(line_clean) then
+    if config.frontend_debug then
+      print("    CSS selector detected: " .. line_clean)
+    end
+
     -- Check if we're inside a nested rule
     local search_lnum = prev_lnum
     local brace_count = 0
     local search_limit = math.max(1, lnum - 50)
 
     while search_lnum >= search_limit do
-      local search_line = vim.trim(vim.fn.getline(search_lnum))
-      for char in search_line:gmatch('.') do
-        if char == '}' then brace_count = brace_count - 1
-        elseif char == '{' then brace_count = brace_count + 1
+      local search_line = vim.fn.getline(search_lnum)
+      if search_line then
+        local search_clean = vim.trim(search_line)
+        for char in search_clean:gmatch('.') do
+          if char == '}' then brace_count = brace_count - 1
+          elseif char == '{' then brace_count = brace_count + 1
+          end
         end
-      end
 
-      if brace_count > 0 then
-        -- Inside a rule block - this is a nested selector
-        return prev_indent + sw + base_indent
+        if brace_count > 0 then
+          return prev_indent + sw + base_indent
+        end
       end
 
       search_lnum = search_lnum - 1
     end
 
-    -- Top-level selector
     return base_indent
   end
 
   -- Handle at-rules
-  if is_at_rule(line_clean) and config.css_indent_at_rules then
-    return base_indent
-  end
-
-  -- Handle selectors after at-rules
-  if is_at_rule(prev_line_clean) and config.css_indent_at_rules then
-    if not prev_line_clean:match('{%s*$') then
-      return prev_indent + sw + base_indent
+  if is_at_rule(line_clean) then
+    if config.frontend_debug then
+      print("    CSS at-rule detected: " .. line_clean)
     end
-  end
-
-  -- Handle multi-line selectors
-  if is_selector(line_clean) and is_selector(prev_line_clean) then
-    return prev_indent
-  end
-
-  -- Handle vendor prefixes (align with previous property)
-  if line_clean:match('^%-[%w%-]+%-') and is_property(prev_line_clean) then
-    return prev_indent
+    return base_indent
   end
 
   -- Default: maintain previous indentation
