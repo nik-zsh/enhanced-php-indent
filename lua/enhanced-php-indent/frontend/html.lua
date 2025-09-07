@@ -1,8 +1,10 @@
--- HTML indentation with fixed syntax
+-- HTML indentation (CLEAN SYNTAX)
 local M = {}
 
 local function is_block_tag(tag_name, config)
-  if not tag_name then return false end
+  if not tag_name then 
+    return false 
+  end
   for _, block_tag in ipairs(config.html_indent_tags) do
     if tag_name:lower() == block_tag:lower() then 
       return true 
@@ -12,7 +14,9 @@ local function is_block_tag(tag_name, config)
 end
 
 local function is_self_closing_tag(tag_name, config)
-  if not tag_name then return false end
+  if not tag_name then 
+    return false 
+  end
   for _, self_closing in ipairs(config.html_self_closing_tags) do
     if tag_name:lower() == self_closing:lower() then 
       return true 
@@ -22,7 +26,9 @@ local function is_self_closing_tag(tag_name, config)
 end
 
 local function is_inline_tag(tag_name, config)
-  if not tag_name then return false end
+  if not tag_name then 
+    return false 
+  end
   for _, inline_tag in ipairs(config.html_inline_tags) do
     if tag_name:lower() == inline_tag:lower() then 
       return true 
@@ -32,21 +38,23 @@ local function is_inline_tag(tag_name, config)
 end
 
 local function parse_tag(line_clean)
-  if not line_clean or line_clean == "" then return nil, nil end
+  if not line_clean or line_clean == "" then 
+    return nil, nil 
+  end
 
-  -- Closing tag: </div>
+  -- Closing tag
   local closing_tag = line_clean:match('^%s*</%s*([%w%-]+)')
   if closing_tag then 
     return closing_tag, 'closing' 
   end
 
-  -- Self-closing tag: <br/> or <img ... />
+  -- Self-closing tag
   local self_closing = line_clean:match('^%s*<%s*([%w%-]+)[^>]*/%s*>')
   if self_closing then 
     return self_closing, 'self_closing' 
   end
 
-  -- Opening tag: <div> or <div class="...">
+  -- Opening tag
   local opening_tag = line_clean:match('^%s*<%s*([%w%-]+)')
   if opening_tag then 
     return opening_tag, 'opening' 
@@ -57,7 +65,9 @@ end
 
 function M.get_indent(lnum, config)
   local line = vim.fn.getline(lnum)
-  if not line then return nil end
+  if not line then 
+    return nil 
+  end
 
   local line_clean = vim.trim(line)
   local prev_lnum = vim.fn.prevnonblank(lnum - 1)
@@ -66,7 +76,7 @@ function M.get_indent(lnum, config)
   local base_indent = config.default_indenting or 0
 
   if config.frontend_debug then
-    print("    HTML: '" .. line_clean .. "'")
+    print("    HTML: line='" .. line_clean .. "'")
   end
 
   -- Handle empty lines
@@ -134,7 +144,7 @@ function M.get_indent(lnum, config)
     end
   end
 
-  -- Handle DOCTYPE and declarations
+  -- Handle DOCTYPE
   if line_clean:find('^%s*<!DOCTYPE') then
     return base_indent
   end
