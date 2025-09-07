@@ -1,5 +1,4 @@
--- enhanced-php-indent.nvim - Advanced Setup with Frontend Language Support (FIXED)
--- Adds HTML, CSS, and JavaScript indentation to PHP files
+-- enhanced-php-indent.nvim - Advanced Setup with Robust Context Detection (FIXED)
 local M = {}
 
 -- Load the original plugin
@@ -7,12 +6,10 @@ local original = require('enhanced-php-indent')
 
 -- Frontend language configuration
 local frontend_defaults = {
-  -- Frontend language support
-  enable_html_indent = false,     -- Enable HTML tag indentation
-  enable_css_indent = false,      -- Enable CSS indentation in <style> tags
-  enable_js_indent = false,       -- Enable JavaScript indentation in <script> tags
+  enable_html_indent = false,
+  enable_css_indent = false,
+  enable_js_indent = false,
 
-  -- HTML-specific options
   html_indent_tags = {
     'html', 'head', 'body', 'div', 'section', 'article', 'header', 'footer',
     'nav', 'main', 'aside', 'form', 'fieldset', 'legend', 'label',
@@ -26,23 +23,19 @@ local frontend_defaults = {
     'link', 'meta', 'param', 'source', 'track', 'wbr'
   },
   html_inline_tags = {
-    'a', 'abbr', 'acronym', 'b', 'bdi', 'bdo', 'big', 'button', 'cite', 'code',
-    'dfn', 'em', 'i', 'kbd', 'mark', 'q', 'rp', 'rt', 'ruby', 's', 'samp',
-    'small', 'span', 'strong', 'sub', 'sup', 'time', 'tt', 'u', 'var'
+    'a', 'abbr', 'b', 'cite', 'code', 'em', 'i', 'kbd', 'mark',
+    'q', 'samp', 'small', 'span', 'strong', 'sub', 'sup', 'time', 'var'
   },
 
-  -- CSS-specific options
-  css_indent_rules = true,        -- Indent CSS rules and properties
-  css_indent_at_rules = true,     -- Indent @media, @keyframes, etc.
+  css_indent_rules = true,
+  css_indent_at_rules = true,
 
-  -- JavaScript-specific options
-  js_indent_switch_case = true,   -- Indent switch case statements
-  js_indent_objects = true,       -- Indent object literals
-  js_indent_arrays = true,        -- Indent array literals
-  js_indent_functions = true,     -- Indent function bodies
+  js_indent_switch_case = true,
+  js_indent_objects = true,
+  js_indent_arrays = true,
+  js_indent_functions = true,
 
-  -- Debug options
-  frontend_debug = false,         -- Debug frontend language processing
+  frontend_debug = false,
 }
 
 -- Load frontend language modules
@@ -50,127 +43,85 @@ local html_indent = require('enhanced-php-indent.frontend.html')
 local css_indent = require('enhanced-php-indent.frontend.css')
 local js_indent = require('enhanced-php-indent.frontend.javascript')
 
--- IMPROVED: Document parser for accurate context detection
-local DocumentParser = {}
+-- ROBUST: Simple and reliable context detection
+local function detect_context(lnum)
+  local max_search = 100
+  local context = 'html'  -- Default context
 
-function DocumentParser.parse_document()
-  local total_lines = vim.fn.line('$')
-  local regions = {}
-  local i = 1
-
-  while i <= total_lines do
+  -- Search backwards for context markers
+  for i = lnum, math.max(1, lnum - max_search), -1 do
     local line = vim.fn.getline(i)
-    local line_clean = vim.trim(line)
 
-    -- PHP regions
-    local php_start = line:find('<%?php') or line:find('<%?=') or line:find('<%?%s')
-    if php_start then
-      local php_end_line = i
-      local found_end = false
+    if not line then break end  -- Safety check
 
-      -- Look for PHP closing tag
-      while php_end_line <= total_lines and not found_end do
-        local check_line = vim.fn.getline(php_end_line)
-        if check_line:find('%?>') then
-          found_end = true
-        else
-          php_end_line = php_end_line + 1
+    -- PHP context (highest priority - overrides everything)
+    if line:find('<%?php') or line:find('<%?=') or line:find('<%?%s') then
+      -- Look forward for PHP closing tag
+      for j = i, math.min(vim.fn.line('$'), i + 50) do
+        local php_line = vim.fn.getline(j)
+        if php_line and php_line:find('%?>') then
+          -- Check if current line is within this PHP block
+          if lnum >= i and lnum <= j then
+            return 'php'
+          end
+          break
+        elseif j == math.min(vim.fn.line('$'), i + 50) then
+          -- PHP not closed, assume rest of file is PHP
+          if lnum >= i then
+            return 'php'
+          end
         end
       end
-
-      table.insert(regions, {
-        type = 'php',
-        start_line = i,
-        end_line = found_end and php_end_line or total_lines
-      })
-
-      i = found_end and php_end_line + 1 or total_lines + 1
-      goto continue
     end
 
-    -- Script regions
-    if line_clean:match('<script[^>]*>%s*$') then
-      local script_end_line = i + 1
-      local found_end = false
-
-      while script_end_line <= total_lines and not found_end do
-        local check_line = vim.trim(vim.fn.getline(script_end_line))
-        if check_line:find('</script>') then
-          found_end = true
-        else
-          script_end_line = script_end_line + 1
+    -- JavaScript context  
+    if line:match('<script[^>]*>%s*$') then
+      -- Look forward for script closing tag
+      for j = i + 1, math.min(vim.fn.line('$'), i + 200) do
+        local js_line = vim.fn.getline(j)
+        if js_line and js_line:find('</script>') then
+          -- Check if current line is within this script block
+          if lnum > i and lnum < j then
+            return 'javascript'
+          end
+          break
         end
       end
-
-      if found_end then
-        table.insert(regions, {
-          type = 'javascript',
-          start_line = i + 1,
-          end_line = script_end_line - 1
-        })
-        i = script_end_line + 1
-      else
-        i = i + 1
-      end
-      goto continue
     end
 
-    -- Style regions
-    if line_clean:match('<style[^>]*>%s*$') then
-      local style_end_line = i + 1
-      local found_end = false
-
-      while style_end_line <= total_lines and not found_end do
-        local check_line = vim.trim(vim.fn.getline(style_end_line))
-        if check_line:find('</style>') then
-          found_end = true
-        else
-          style_end_line = style_end_line + 1
+    -- CSS context
+    if line:match('<style[^>]*>%s*$') then
+      -- Look forward for style closing tag
+      for j = i + 1, math.min(vim.fn.line('$'), i + 200) do
+        local css_line = vim.fn.getline(j)
+        if css_line and css_line:find('</style>') then
+          -- Check if current line is within this style block
+          if lnum > i and lnum < j then
+            return 'css'
+          end
+          break
         end
       end
-
-      if found_end then
-        table.insert(regions, {
-          type = 'css',
-          start_line = i + 1,
-          end_line = style_end_line - 1
-        })
-        i = style_end_line + 1
-      else
-        i = i + 1
-      end
-      goto continue
-    end
-
-    ::continue::
-    i = i + 1
-  end
-
-  return regions
-end
-
-function DocumentParser.get_context_for_line(lnum)
-  local regions = DocumentParser.parse_document()
-
-  -- Check if line is within any special region
-  for _, region in ipairs(regions) do
-    if lnum >= region.start_line and lnum <= region.end_line then
-      return region.type
     end
   end
 
-  -- Default to HTML context
-  return 'html'
+  return context
 end
 
--- Enhanced indent function with improved frontend support
+-- Enhanced indent function with robust frontend support
 local function enhanced_indent_with_frontend()
   local lnum = vim.v.lnum
   local line = vim.fn.getline(lnum)
+
+  -- Safety check
+  if not line then
+    return _G.EnhancedPhpIndentOriginal()
+  end
+
   local line_clean = vim.trim(line)
 
-  -- Use improved context detection
-  local context = DocumentParser.get_context_for_line(lnum)
+  -- Use robust context detection
+  local context = detect_context(lnum)
 
   if M.config.frontend_debug then
     print("Frontend: Line " .. lnum .. " context=" .. context .. " line=" .. line_clean)
@@ -179,16 +130,34 @@ local function enhanced_indent_with_frontend()
   -- Apply context-specific indentation
   if context == 'html' and M.config.enable_html_indent then
     local result = html_indent.get_indent(lnum, M.config)
-    if result then return result end
+    if result ~= nil then 
+      if M.config.frontend_debug then
+        print("  HTML indent result: " .. tostring(result))
+      end
+      return result 
+    end
   elseif context == 'css' and M.config.enable_css_indent then
     local result = css_indent.get_indent(lnum, M.config)
-    if result then return result end
+    if result ~= nil then 
+      if M.config.frontend_debug then
+        print("  CSS indent result: " .. tostring(result))
+      end
+      return result 
+    end
   elseif context == 'javascript' and M.config.enable_js_indent then
     local result = js_indent.get_indent(lnum, M.config)
-    if result then return result end
+    if result ~= nil then 
+      if M.config.frontend_debug then
+        print("  JS indent result: " .. tostring(result))
+      end
+      return result 
+    end
   end
 
   -- Fallback to original PHP indentation
+  if M.config.frontend_debug then
+    print("  Using original PHP indentation")
+  end
   return _G.EnhancedPhpIndentOriginal()
 end
 
@@ -216,11 +185,11 @@ function M.advanced_setup(opts)
     _G.EnhancedPhpIndent = enhanced_indent_with_frontend
 
     if final_config.frontend_debug then
-      -- FIXED: Show proper boolean values instead of table reference
-      print("Frontend indentation enabled for:")
+      print("Frontend indentation enabled:")
       print("  HTML: " .. tostring(final_config.enable_html_indent))
       print("  CSS: " .. tostring(final_config.enable_css_indent))
       print("  JavaScript: " .. tostring(final_config.enable_js_indent))
+      print("Enhanced PHP Indent (Advanced) loaded for: " .. vim.fn.expand('%:t'))
     end
   end
 end
