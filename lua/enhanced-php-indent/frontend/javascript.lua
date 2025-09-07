@@ -1,98 +1,63 @@
--- JavaScript indentation for enhanced-php-indent.nvim (FIXED - no goto statements)
+-- JavaScript indentation with fixed syntax
 local M = {}
 
--- Check for function declarations
 local function is_function_declaration(line_clean)
-  return line_clean:match('^function%s+') or
-         line_clean:match('^[%w_$]+%s*:%s*function') or
-         line_clean:match('^[%w_$%.%[%]]+%s*=%s*function') or
-         line_clean:match('=>%s*{?%s*$') -- Arrow functions
+  return (line_clean:find('^%s*function%s+') or
+          line_clean:find('^%s*[%w_$]+%s*:%s*function') or
+          line_clean:find('^%s*[%w_$%.%[%]]+%s*=%s*function') or
+          line_clean:find('=>%s*{?%s*$'))
 end
 
--- Check for control structures
 local function is_control_structure(line_clean)
-  return line_clean:match('^if%s*%(') or
-         line_clean:match('^else%s*if%s*%(') or
-         line_clean:match('^else%s*{?%s*$') or
-         line_clean:match('^for%s*%(') or
-         line_clean:match('^while%s*%(') or
-         line_clean:match('^do%s*{?%s*$') or
-         line_clean:match('^switch%s*%(') or
-         line_clean:match('^try%s*{?%s*$') or
-         line_clean:match('^catch%s*%(') or
-         line_clean:match('^finally%s*{?%s*$')
+  return (line_clean:find('^%s*if%s*%(') or
+          line_clean:find('^%s*else%s*if%s*%(') or
+          line_clean:find('^%s*else%s*{?%s*$') or
+          line_clean:find('^%s*for%s*%(') or
+          line_clean:find('^%s*while%s*%(') or
+          line_clean:find('^%s*do%s*{?%s*$') or
+          line_clean:find('^%s*switch%s*%(') or
+          line_clean:find('^%s*try%s*{?%s*$') or
+          line_clean:find('^%s*catch%s*%(') or
+          line_clean:find('^%s*finally%s*{?%s*$'))
 end
 
--- Check for case/default statements
 local function is_case_statement(line_clean)
-  return line_clean:match('^case%s+') or line_clean:match('^default%s*:')
+  return (line_clean:find('^%s*case%s+') or line_clean:find('^%s*default%s*:'))
 end
 
--- FIXED: Find matching opening brace/bracket/paren - no goto statements
-local function find_matching_open(lnum, close_char)
-  local open_char = ({['}'] = '{', [']'] = '[', [')'] = '('})[close_char]
-  if not open_char then return nil end
-
-  local search_lnum = lnum - 1
-  local count = 1
-  local max_search = 200
-
-  while search_lnum > 0 and count > 0 and (lnum - search_lnum) < max_search do
-    local line = vim.fn.getline(search_lnum)
-
-    -- Process line only if not empty
-    if line ~= "" then
-      for char in line:gmatch('.') do
-        if char == close_char then
-          count = count + 1
-        elseif char == open_char then
-          count = count - 1
-          if count == 0 then
-            return search_lnum
-          end
-        end
-      end
-    end
-
-    search_lnum = search_lnum - 1
-  end
-
-  return nil
-end
-
--- FIXED: Find switch statement - no goto statements
+-- Find switch statement with better detection
 local function find_switch_statement(lnum)
   local search_lnum = lnum - 1
   local brace_count = 0
-  local max_search = 100
 
-  while search_lnum > 0 and search_lnum > (lnum - max_search) do
-    local line = vim.fn.getline(search_lnum)
-    local line_clean = vim.trim(line)
+  for i = search_lnum, math.max(1, search_lnum - 20), -1 do
+    local line = vim.fn.getline(i)
+    if line then
+      local line_clean = vim.trim(line)
 
-    -- Process line only if not empty
-    if line_clean ~= "" then
       -- Count braces to stay in current scope
       for char in line:gmatch('.') do
-        if char == '}' then brace_count = brace_count - 1
-        elseif char == '{' then brace_count = brace_count + 1
+        if char == '}' then 
+          brace_count = brace_count - 1
+        elseif char == '{' then 
+          brace_count = brace_count + 1
         end
       end
 
-      if brace_count == 1 and line_clean:match('switch%s*%(') then
-        return search_lnum
+      -- Found switch at correct brace level
+      if brace_count >= 0 and line_clean:find('switch%s*%(') then
+        return i
       end
     end
-
-    search_lnum = search_lnum - 1
   end
 
   return nil
 end
 
--- Main JavaScript indentation function
 function M.get_indent(lnum, config)
   local line = vim.fn.getline(lnum)
+  if not line then return nil end
+
   local line_clean = vim.trim(line)
   local prev_lnum = vim.fn.prevnonblank(lnum - 1)
   local prev_line = prev_lnum > 0 and vim.fn.getline(prev_lnum) or ""
@@ -101,24 +66,45 @@ function M.get_indent(lnum, config)
   local sw = vim.fn.shiftwidth()
   local base_indent = config.default_indenting or 0
 
+  if config.frontend_debug then
+    print("    JS: '" .. line_clean .. "' prev: '" .. prev_line_clean .. "'")
+  end
+
   -- Handle empty lines
   if line_clean == "" then
     return prev_indent
   end
 
   -- Handle closing braces, brackets, parentheses
-  if line_clean:match('^[%}%]%)]') then
-    local close_char = line_clean:sub(1, 1)
-    local opening_lnum = find_matching_open(lnum, close_char)
+  if line_clean:find('^%s*[%}%]%)]') then
+    local close_char = line_clean:match('^%s*([%}%]%)])')
+    local open_char = ({['}'] = '{', [']'] = '[', [')'] = '('})[close_char]
 
-    if opening_lnum then
-      return vim.fn.indent(opening_lnum) + base_indent
-    else
-      return math.max(prev_indent - sw, base_indent)
+    if open_char then
+      local search_lnum = lnum - 1
+      local count = 1
+
+      for i = search_lnum, math.max(1, search_lnum - 30), -1 do
+        local search_line = vim.fn.getline(i)
+        if search_line then
+          for char in search_line:gmatch('.') do
+            if char == close_char then 
+              count = count + 1
+            elseif char == open_char then 
+              count = count - 1
+              if count == 0 then
+                return vim.fn.indent(i) + base_indent
+              end
+            end
+          end
+        end
+      end
     end
+
+    return math.max(prev_indent - sw, base_indent)
   end
 
-  -- Handle case and default statements in switch
+  -- Handle case and default statements
   if config.js_indent_switch_case and is_case_statement(line_clean) then
     local switch_lnum = find_switch_statement(lnum)
     if switch_lnum then
@@ -128,18 +114,17 @@ function M.get_indent(lnum, config)
     end
   end
 
-  -- Handle break statements in switch
-  if line_clean:match('^break%s*;') then
-    -- Check if we're in a case statement
-    local search_lnum = prev_lnum
-    local search_limit = math.max(1, lnum - 20)
-
-    while search_lnum >= search_limit do
-      local search_line = vim.trim(vim.fn.getline(search_lnum))
-      if is_case_statement(search_line) then
-        return vim.fn.indent(search_lnum) + sw + base_indent
+  -- Handle break statements
+  if line_clean:find('^%s*break%s*;') or line_clean:find('^%s*return%s') then
+    -- Look for case statement to align with
+    for i = lnum - 1, math.max(1, lnum - 15), -1 do
+      local search_line = vim.fn.getline(i)
+      if search_line then
+        local search_clean = vim.trim(search_line)
+        if is_case_statement(search_clean) then
+          return vim.fn.indent(i) + sw + base_indent
+        end
       end
-      search_lnum = search_lnum - 1
     end
     return prev_indent
   end
@@ -150,64 +135,39 @@ function M.get_indent(lnum, config)
   end
 
   -- Handle content after opening braces
-  if prev_line_clean:match('{%s*$') then
+  if prev_line_clean:find('{%s*$') then
     return prev_indent + sw + base_indent
   end
 
-  -- Handle content after control structures without braces
-  if is_control_structure(prev_line_clean) and not prev_line_clean:match('{%s*$') then
+  -- Handle control structures without braces
+  if is_control_structure(prev_line_clean) and not prev_line_clean:find('{%s*$') then
     return prev_indent + sw + base_indent
   end
 
   -- Handle function declarations
   if config.js_indent_functions and is_function_declaration(prev_line_clean) then
-    if not prev_line_clean:match('{%s*$') then
+    if not prev_line_clean:find('{%s*$') then
       return prev_indent + sw + base_indent
     end
   end
 
   -- Handle object literals and arrays
-  if prev_line_clean:match('[%[{]%s*$') then
-    if config.js_indent_objects or config.js_indent_arrays then
-      return prev_indent + sw + base_indent
-    end
-  end
-
-  -- Handle continued expressions
-  if prev_line_clean:match('[,+%-*/%%=&|<>!]%s*$') or
-     prev_line_clean:match('&&%s*$') or
-     prev_line_clean:match('||%s*$') or
-     prev_line_clean:match('%?%s*$') or
-     prev_line_clean:match(':%s*$') then
+  if prev_line_clean:find('[%[{]%s*$') then
     return prev_indent + sw + base_indent
   end
 
   -- Handle method chaining
-  if line_clean:match('^%.') then
-    return prev_indent + sw + base_indent
-  end
-
-  -- Handle ternary operator
-  if prev_line_clean:match('%?') and line_clean:match('^:') then
+  if line_clean:find('^%s*%.') then
     return prev_indent
   end
 
-  -- Handle else statements
-  if line_clean:match('^else%s') then
-    -- Find matching if statement
-    local search_lnum = prev_lnum
-    local search_limit = math.max(1, lnum - 20)
-
-    while search_lnum >= search_limit do
-      local search_line = vim.trim(vim.fn.getline(search_lnum))
-      if search_line:match('^if%s*%(') then
-        return vim.fn.indent(search_lnum) + base_indent
-      end
-      search_lnum = search_lnum - 1
-    end
+  -- Handle continued expressions
+  if (prev_line_clean:find('[,+%-*/%%=&|<>!]%s*$') or
+      prev_line_clean:find('&&%s*$') or
+      prev_line_clean:find('||%s*$')) then
+    return prev_indent + sw + base_indent
   end
 
-  -- Default: maintain previous indentation
   return prev_indent
 end
 
