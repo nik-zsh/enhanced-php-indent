@@ -1,104 +1,60 @@
--- HTML indentation for enhanced-php-indent.nvim (ROBUST)
+-- HTML indentation with fixed syntax
 local M = {}
 
--- Check if tag is a block-level tag that should indent
 local function is_block_tag(tag_name, config)
   if not tag_name then return false end
-
   for _, block_tag in ipairs(config.html_indent_tags) do
-    if tag_name:lower() == block_tag:lower() then
-      return true
+    if tag_name:lower() == block_tag:lower() then 
+      return true 
     end
   end
   return false
 end
 
--- Check if tag is self-closing
 local function is_self_closing_tag(tag_name, config)
   if not tag_name then return false end
-
   for _, self_closing in ipairs(config.html_self_closing_tags) do
-    if tag_name:lower() == self_closing:lower() then
-      return true
+    if tag_name:lower() == self_closing:lower() then 
+      return true 
     end
   end
   return false
 end
 
--- Check if tag is inline
 local function is_inline_tag(tag_name, config)
   if not tag_name then return false end
-
   for _, inline_tag in ipairs(config.html_inline_tags) do
-    if tag_name:lower() == inline_tag:lower() then
-      return true
+    if tag_name:lower() == inline_tag:lower() then 
+      return true 
     end
   end
   return false
 end
 
--- Parse HTML tag from line
 local function parse_tag(line_clean)
   if not line_clean or line_clean == "" then return nil, nil end
 
   -- Closing tag: </div>
-  local closing_tag = line_clean:match('^</%s*([%w%-]+)')
-  if closing_tag then
-    return closing_tag, 'closing'
+  local closing_tag = line_clean:match('^%s*</%s*([%w%-]+)')
+  if closing_tag then 
+    return closing_tag, 'closing' 
   end
 
   -- Self-closing tag: <br/> or <img ... />
-  local self_closing = line_clean:match('^<%s*([%w%-]+)[^>]*/%s*>')
-  if self_closing then
-    return self_closing, 'self_closing'
+  local self_closing = line_clean:match('^%s*<%s*([%w%-]+)[^>]*/%s*>')
+  if self_closing then 
+    return self_closing, 'self_closing' 
   end
 
   -- Opening tag: <div> or <div class="...">
-  local opening_tag = line_clean:match('^<%s*([%w%-]+)')
-  if opening_tag then
-    return opening_tag, 'opening'
+  local opening_tag = line_clean:match('^%s*<%s*([%w%-]+)')
+  if opening_tag then 
+    return opening_tag, 'opening' 
   end
 
   return nil, nil
 end
 
--- Find matching opening tag
-local function find_opening_tag(lnum, closing_tag_name, config)
-  local search_lnum = lnum - 1
-  local tag_count = 1
-  local max_search = 200
-
-  while search_lnum > 0 and tag_count > 0 and (lnum - search_lnum) < max_search do
-    local line = vim.fn.getline(search_lnum)
-    if not line then break end
-
-    local line_clean = vim.trim(line)
-
-    if line_clean ~= "" and 
-       not line_clean:find('^<%?') and 
-       not line_clean:find('^%?>') then
-
-      local tag_name, tag_type = parse_tag(line_clean)
-
-      if tag_name and tag_name:lower() == closing_tag_name:lower() then
-        if tag_type == 'closing' then
-          tag_count = tag_count + 1
-        elseif tag_type == 'opening' then
-          tag_count = tag_count - 1
-          if tag_count == 0 then
-            return search_lnum
-          end
-        end
-      end
-    end
-
-    search_lnum = search_lnum - 1
-  end
-
-  return nil
-end
-
--- Main HTML indentation function with debugging
 function M.get_indent(lnum, config)
   local line = vim.fn.getline(lnum)
   if not line then return nil end
@@ -110,21 +66,16 @@ function M.get_indent(lnum, config)
   local base_indent = config.default_indenting or 0
 
   if config.frontend_debug then
-    print("    HTML processing line: '" .. line_clean .. "'")
+    print("    HTML: '" .. line_clean .. "'")
   end
 
   -- Handle empty lines
-  if line_clean == "" then
-    return prev_indent
+  if line_clean == "" then 
+    return prev_indent 
   end
 
-  -- Handle PHP code in HTML context
-  if line_clean:find('^<%?') or line_clean:find('^%?>') then
-    return prev_indent
-  end
-
-  -- Handle HTML comments
-  if line_clean:find('^<!--') or line_clean:find('^%-->') then
+  -- Handle PHP code
+  if line_clean:find('^%s*<%?') or line_clean:find('^%s*%?>') then
     return prev_indent
   end
 
@@ -132,17 +83,32 @@ function M.get_indent(lnum, config)
 
   -- Handle closing tags
   if tag_name and tag_type == 'closing' then
-    if config.frontend_debug then
-      print("    HTML closing tag: " .. tag_name)
-    end
-
     if is_block_tag(tag_name, config) then
-      local opening_lnum = find_opening_tag(lnum, tag_name, config)
-      if opening_lnum then
-        return vim.fn.indent(opening_lnum) + base_indent
-      else
-        return math.max(prev_indent - sw, base_indent)
+      -- Find matching opening tag
+      local search_lnum = lnum - 1
+      local tag_count = 1
+
+      for i = search_lnum, math.max(1, search_lnum - 30), -1 do
+        local search_line = vim.fn.getline(i)
+        if search_line then
+          local search_clean = vim.trim(search_line)
+          if search_clean ~= "" and not search_clean:find('^%s*<%?') then
+            local search_tag, search_type = parse_tag(search_clean)
+            if search_tag and search_tag:lower() == tag_name:lower() then
+              if search_type == 'closing' then
+                tag_count = tag_count + 1
+              elseif search_type == 'opening' then
+                tag_count = tag_count - 1
+                if tag_count == 0 then
+                  return vim.fn.indent(i) + base_indent
+                end
+              end
+            end
+          end
+        end
       end
+
+      return math.max(prev_indent - sw, base_indent)
     else
       return prev_indent
     end
@@ -150,9 +116,6 @@ function M.get_indent(lnum, config)
 
   -- Handle self-closing tags
   if tag_name and tag_type == 'self_closing' then
-    if config.frontend_debug then
-      print("    HTML self-closing tag: " .. tag_name)
-    end
     return prev_indent
   end
 
@@ -165,37 +128,17 @@ function M.get_indent(lnum, config)
 
       if prev_tag_name and prev_tag_type == 'opening' then
         if is_block_tag(prev_tag_name, config) and not is_inline_tag(prev_tag_name, config) then
-          if config.frontend_debug then
-            print("    HTML content after opening block tag: " .. prev_tag_name)
-          end
           return vim.fn.indent(prev_lnum) + sw + base_indent
         end
       end
     end
   end
 
-  -- Handle opening tags
-  if tag_name and tag_type == 'opening' then
-    if config.frontend_debug then
-      print("    HTML opening tag: " .. tag_name)
-    end
-    return prev_indent
-  end
-
-  -- Handle attributes on multiple lines
-  if line_clean:match('^[%w%-]+=') or line_clean:match('^[%w%-]+%s*=') then
-    if config.frontend_debug then
-      print("    HTML attribute continuation")
-    end
-    return prev_indent + sw
-  end
-
   -- Handle DOCTYPE and declarations
-  if line_clean:match('^<!DOCTYPE') or line_clean:match('^<!%[CDATA%[') then
+  if line_clean:find('^%s*<!DOCTYPE') then
     return base_indent
   end
 
-  -- Default: maintain previous indentation
   return prev_indent
 end
 
