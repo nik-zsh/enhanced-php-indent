@@ -2,7 +2,7 @@
 -- Based on official php.vim with enhancements
 local M = {}
 
--- Full configuration options (from official php.vim) + EXTENSIONS
+-- Full configuration options (from official php.vim)
 M.config = {
  -- Basic indentation
  default_indenting = 0, -- Extra base indentation
@@ -27,12 +27,6 @@ M.config = {
  -- Enhanced features
  enable_real_time_indent = true, -- Real-time indentation fixes
  smart_array_indent = true, -- Enhanced array handling
-
- -- NEW: Multi-language support (added without breaking existing code)
- enable_html_indent = false, -- Enable HTML tag indentation in mixed files
- enable_js_indent = false,   -- Enable JavaScript indentation in <script> tags  
- enable_css_indent = false,  -- Enable CSS indentation in <style> tags
- multi_lang_debug = false,   -- Debug multi-language processing
 }
 
 -- Helper: Find matching opening bracket/brace/paren
@@ -90,7 +84,7 @@ local function inside_function_params(lnum)
  return false, nil
 end
 
--- Helper: Simple switch detection (working from debug version)
+-- Helper: Simple switch detection
 local function find_switch_indent(lnum)
  local search_lnum = lnum - 1
 
@@ -108,7 +102,7 @@ local function find_switch_indent(lnum)
  return nil
 end
 
--- COMPREHENSIVE indent function
+-- ORIGINAL PHP indent function (no HTML/CSS/JS)
 function _G.EnhancedPhpIndent()
  local lnum = vim.v.lnum
  local line = vim.fn.getline(lnum)
@@ -123,55 +117,39 @@ function _G.EnhancedPhpIndent()
  -- Apply default extra indenting
  local base_indent = M.config.default_indenting
 
- -- NEW: Multi-language support (only if enabled)
- if M.config.enable_html_indent or M.config.enable_js_indent or M.config.enable_css_indent then
-   local multi_lang = require('enhanced-php-indent.multi-lang')
-   local result = multi_lang.get_indent(lnum, line_clean, prev_clean, prev_indent, sw, base_indent, M.config)
-   if result then
-     return result
-   end
- end
-
- -- ORIGINAL PHP INDENTATION LOGIC (completely unchanged)
- -- ===================================================
-
- -- FIXED: PHP tags outdenting (official feature)
+ -- PHP tags outdenting
  if M.config.outdent_php_escape then
  if line_clean:find("^<%?") or line_clean:find("^%?>") then
  return 0
  end
  end
 
- -- FIXED: Closing brackets alignment (CRITICAL FIX)
+ -- Closing brackets alignment
  if line_clean:find("^%]") or line_clean:find("^%}") or line_clean:find("^%)") then
  local close_char = line_clean:sub(1,1)
  local open_lnum = find_matching_open(lnum, close_char)
 
  if open_lnum then
- -- FIXED: Align closing bracket with opening line
  return vim.fn.indent(open_lnum) + base_indent
  else
- -- Fallback: dedent from previous
  return math.max(prev_indent - sw, base_indent)
  end
  end
 
- -- ENHANCED: Smart array handling
+ -- Smart array handling
  if M.config.smart_array_indent then
- -- Empty line inside array brackets 
  if line_clean == "" and prev_clean:find("%[%s*$") then
  local next_lnum = lnum + 1
  local next_line = vim.fn.getline(next_lnum)
  local next_clean = vim.trim(next_line)
 
- -- FIXED: Normal indent for arrays (not double)
  if next_clean:find("^%]") then
  return prev_indent + sw + base_indent
  end
  end
  end
 
- -- WORKING: Switch/case handling (from debug version)
+ -- Switch/case handling
  if line_clean:find("^case%s.+:") or line_clean:find("^default%s*:") then
  local switch_indent = find_switch_indent(lnum)
  if switch_indent then
@@ -195,7 +173,7 @@ function _G.EnhancedPhpIndent()
  return prev_indent
  end
 
- -- OFFICIAL: Function parameter indentation
+ -- Function parameter indentation
  if M.config.indent_function_call_parameters or M.config.indent_function_declaration_parameters then
  local in_params, func_indent = inside_function_params(lnum)
  if in_params and func_indent then
@@ -206,7 +184,7 @@ function _G.EnhancedPhpIndent()
  -- Opening braces/brackets/parens
  if prev_clean:find("{%s*$") or prev_clean:find("%[%s*$") or prev_clean:find("%(%s*$") then
  if M.config.braces_at_code_level and prev_clean:find("{%s*$") then
- return prev_indent + base_indent -- Braces at code level
+ return prev_indent + base_indent
  else
  return prev_indent + sw + base_indent
  end
@@ -220,10 +198,10 @@ function _G.EnhancedPhpIndent()
  return prev_indent + sw + base_indent
  end
 
- -- OFFICIAL: Method chaining (arrow matching)
+ -- Method chaining
  if not M.config.no_arrow_matching then
  if prev_clean:find("->") and line_clean:find("^%->") then
- return prev_indent -- Keep same indentation for chaining
+ return prev_indent
  end
  end
 
