@@ -1,228 +1,213 @@
--- Simple HTML indentation that actually works (FIXED)
+-- Comprehensive working HTML indenter with extensive debugging
 local M = {}
 
--- Simple function to check if a tag should indent its content
-local function should_indent(tag_name)
-	if not tag_name then
-		return false
-	end
+-- Block-level tags that should cause indentation
+local BLOCK_TAGS = {
+  html = true, head = true, body = true, div = true, section = true, article = true,
+  header = true, footer = true, nav = true, main = true, aside = true, form = true,
+  fieldset = true, ul = true, ol = true, li = true, table = true, thead = true,
+  tbody = true, tfoot = true, tr = true, th = true, td = true, blockquote = true,
+  figure = true, details = true, summary = true
+}
 
-	-- Convert to lowercase
-	tag_name = tag_name:lower()
-
-	-- Block-level tags that indent content
-	local block_tags = {
-		"html",
-		"head",
-		"body",
-		"div",
-		"section",
-		"article",
-		"header",
-		"footer",
-		"nav",
-		"main",
-		"aside",
-		"form",
-		"fieldset",
-		"ul",
-		"ol",
-		"li",
-		"table",
-		"thead",
-		"tbody",
-		"tfoot",
-		"tr",
-		"th",
-		"td",
-		"blockquote",
-		"figure",
-		"details",
-	}
-
-	for _, block_tag in ipairs(block_tags) do
-		if tag_name == block_tag then
-			return true
-		end
-	end
-
-	return false
+-- Debug function
+local function debug_log(config, message)
+  if config.html_debug then
+    print("HTML DEBUG: " .. message)
+  end
 end
 
--- Parse HTML tag from line
-local function get_tag_info(line)
-	if not line or line == "" then
-		return nil, nil
-	end
+-- Extract tag name and type from line
+local function analyze_line(line_clean)
+  if not line_clean or line_clean == "" then
+    return nil, "empty"
+  end
 
-	-- Skip PHP code
-	if line:find("<%?") or line:find("%?>") then
-		return nil, nil
-	end
+  -- Skip PHP code
+  if line_clean:find('<%?') or line_clean:find('%?>') then
+    return nil, "php"
+  end
 
-	-- Closing tag: </div>
-	local closing = line:match("^%s*</%s*([%w%-]+)")
-	if closing then
-		return closing:lower(), "close"
-	end
+  -- DOCTYPE
+  if line_clean:find('^%s*<!DOCTYPE') then
+    return "!doctype", "doctype"
+  end
 
-	-- Self-closing: <br />
-	local self_closing = line:match("^%s*<%s*([%w%-]+)[^>]*/%s*>")
-	if self_closing then
-		return self_closing:lower(), "self"
-	end
+  -- HTML comments
+  if line_clean:find('^%s*<!--') or line_clean:find('^%s*%-->') then
+    return nil, "comment"
+  end
 
-	-- Opening tag: <div>
-	local opening = line:match("^%s*<%s*([%w%-]+)")
-	if opening then
-		return opening:lower(), "open"
-	end
+  -- Closing tag: </div>
+  local closing_tag = line_clean:match('^%s*</%s*([%w%-]+)')
+  if closing_tag then
+    return closing_tag:lower(), "closing"
+  end
 
-	return nil, nil
+  -- Self-closing tag: <br /> or <img src="" />
+  local self_closing_tag = line_clean:match('^%s*<%s*([%w%-]+)[^>]*/%s*>')
+  if self_closing_tag then
+    return self_closing_tag:lower(), "self_closing"
+  end
+
+  -- Opening tag: <div> or <div class="test">
+  local opening_tag = line_clean:match('^%s*<%s*([%w%-]+)')
+  if opening_tag then
+    return opening_tag:lower(), "opening"
+  end
+
+  -- Text content
+  return nil, "text"
 end
 
--- Find the line with matching opening tag
-local function find_opening_tag_line(lnum, close_tag_name)
-	local count = 1
-	local search_line = lnum - 1
+-- Find the opening tag that matches a closing tag
+local function find_matching_opening(lnum, target_tag, config)
+  debug_log(config, "Looking for opening <" .. target_tag .. "> to match closing at line " .. lnum)
 
-	while search_line > 0 and count > 0 and (lnum - search_line) < 50 do
-		local line = vim.fn.getline(search_line)
-		if line then
-			local tag_name, tag_type = get_tag_info(vim.trim(line))
+  local depth = 1
+  local search_line = lnum - 1
 
-			if tag_name == close_tag_name then
-				if tag_type == "close" then
-					count = count + 1
-				elseif tag_type == "open" then
-					count = count - 1
-					if count == 0 then
-						return search_line
-					end
-				end
-			end
-		end
-		search_line = search_line - 1
-	end
+  while search_line > 0 and depth > 0 and (lnum - search_line) < 100 do
+    local line = vim.fn.getline(search_line)
+    if line then
+      local line_clean = vim.trim(line)
+      local tag_name, tag_type = analyze_line(line_clean)
 
-	return nil
+      if tag_name == target_tag then
+        if tag_type == "closing" then
+          depth = depth + 1
+          debug_log(config, "  Line " .. search_line .. ": found closing </" .. tag_name .. ">, depth=" .. depth)
+        elseif tag_type == "opening" then
+          depth = depth - 1
+          debug_log(config, "  Line " .. search_line .. ": found opening <" .. tag_name .. ">, depth=" .. depth)
+          if depth == 0 then
+            debug_log(config, "  Found matching opening <" .. tag_name .. "> at line " .. search_line)
+            return search_line
+          end
+        end
+      end
+    end
+    search_line = search_line - 1
+  end
+
+  debug_log(config, "  No matching opening tag found for </" .. target_tag .. ">")
+  return nil
 end
 
 -- Main HTML indentation function
 function M.get_indent(lnum, config)
-	local line = vim.fn.getline(lnum)
-	if not line then
-		return nil
-	end
+  local line = vim.fn.getline(lnum)
+  if not line then 
+    debug_log(config, "Line " .. lnum .. " is nil, returning nil")
+    return nil 
+  end
 
-	local line_clean = vim.trim(line)
-	local prev_lnum = vim.fn.prevnonblank(lnum - 1)
-	local prev_line = prev_lnum > 0 and vim.fn.getline(prev_lnum) or ""
-	local prev_indent = prev_lnum > 0 and vim.fn.indent(prev_lnum) or 0
-	local sw = vim.fn.shiftwidth()
+  local line_clean = vim.trim(line)
+  local prev_lnum = vim.fn.prevnonblank(lnum - 1)
+  local prev_line = prev_lnum > 0 and vim.fn.getline(prev_lnum) or ""
+  local prev_line_clean = vim.trim(prev_line)
+  local prev_indent = prev_lnum > 0 and vim.fn.indent(prev_lnum) or 0
+  local sw = vim.fn.shiftwidth()
 
-	if config.html_debug then
-		print("    HTML SIMPLE: Line " .. lnum .. " = '" .. line_clean .. "'")
-		print("    HTML SIMPLE: prev_indent=" .. prev_indent .. " shiftwidth=" .. sw)
-	end
+  debug_log(config, "=== PROCESSING LINE " .. lnum .. " ===")
+  debug_log(config, "Current line: '" .. line_clean .. "'")
+  debug_log(config, "Previous line " .. prev_lnum .. ": '" .. prev_line_clean .. "' (indent=" .. prev_indent .. ")")
+  debug_log(config, "Shiftwidth: " .. sw)
 
-	-- Handle empty lines
-	if line_clean == "" then
-		if config.html_debug then
-			print("    HTML SIMPLE: Empty line, return " .. prev_indent)
-		end
-		return prev_indent
-	end
+  -- Analyze current line
+  local current_tag, current_type = analyze_line(line_clean)
+  debug_log(config, "Current line analysis: tag='" .. tostring(current_tag) .. "' type='" .. current_type .. "'")
 
-	-- Don't process PHP code
-	if line_clean:find("<%?") or line_clean:find("%?>") then
-		if config.html_debug then
-			print("    HTML SIMPLE: PHP code, return nil")
-		end
-		return nil
-	end
+  -- Handle empty lines
+  if current_type == "empty" then
+    debug_log(config, "Empty line, maintaining previous indent: " .. prev_indent)
+    return prev_indent
+  end
 
-	-- Get tag information
-	local tag_name, tag_type = get_tag_info(line_clean)
+  -- Don't process PHP code
+  if current_type == "php" then
+    debug_log(config, "PHP code detected, returning nil for PHP indenter")
+    return nil
+  end
 
-	if tag_name then
-		if config.html_debug then
-			print("    HTML SIMPLE: Found " .. tag_type .. " tag: " .. tag_name)
-		end
+  -- Handle comments
+  if current_type == "comment" then
+    debug_log(config, "HTML comment, maintaining previous indent: " .. prev_indent)
+    return prev_indent
+  end
 
-		-- Handle closing tags
-		if tag_type == "close" then
-			if should_indent(tag_name) then
-				local opening_line = find_opening_tag_line(lnum, tag_name)
-				if opening_line then
-					local result = vim.fn.indent(opening_line)
-					if config.html_debug then
-						print(
-							"    HTML SIMPLE: Closing "
-								.. tag_name
-								.. " aligns with line "
-								.. opening_line
-								.. " = "
-								.. result
-						)
-					end
-					return result
-				else
-					local result = math.max(prev_indent - sw, 0)
-					if config.html_debug then
-						print("    HTML SIMPLE: Closing " .. tag_name .. " dedent = " .. result)
-					end
-					return result
-				end
-			else
-				if config.html_debug then
-					print("    HTML SIMPLE: Inline closing " .. tag_name .. " = " .. prev_indent)
-				end
-				return prev_indent
-			end
+  -- Handle DOCTYPE
+  if current_type == "doctype" then
+    debug_log(config, "DOCTYPE declaration, using base indent: 0")
+    return 0
+  end
 
-			-- Handle self-closing tags
-		elseif tag_type == "self" then
-			if config.html_debug then
-				print("    HTML SIMPLE: Self-closing " .. tag_name .. " = " .. prev_indent)
-			end
-			return prev_indent
+  -- Handle closing tags
+  if current_type == "closing" and current_tag then
+    if BLOCK_TAGS[current_tag] then
+      debug_log(config, "Processing closing block tag: " .. current_tag)
+      local opening_line = find_matching_opening(lnum, current_tag, config)
+      if opening_line then
+        local result = vim.fn.indent(opening_line)
+        debug_log(config, "Closing </" .. current_tag .. "> aligns with opening at line " .. opening_line .. " = " .. result)
+        return result
+      else
+        local result = math.max(prev_indent - sw, 0)
+        debug_log(config, "No matching opening found, dedenting: " .. prev_indent .. " - " .. sw .. " = " .. result)
+        return result
+      end
+    else
+      debug_log(config, "Closing inline tag " .. current_tag .. ", maintaining indent: " .. prev_indent)
+      return prev_indent
+    end
+  end
 
-			-- Handle opening tags
-		elseif tag_type == "open" then
-			if config.html_debug then
-				print("    HTML SIMPLE: Opening " .. tag_name .. " = " .. prev_indent)
-			end
-			return prev_indent
-		end
-	end
+  -- Handle self-closing tags
+  if current_type == "self_closing" and current_tag then
+    debug_log(config, "Self-closing tag " .. current_tag .. ", maintaining indent: " .. prev_indent)
+    return prev_indent
+  end
 
-	-- Check if we should indent because previous line was opening block tag
-	if prev_line and prev_line ~= "" then
-		local prev_tag_name, prev_tag_type = get_tag_info(vim.trim(prev_line))
+  -- Handle opening tags
+  if current_type == "opening" and current_tag then
+    debug_log(config, "Opening tag " .. current_tag .. ", maintaining indent: " .. prev_indent)
+    return prev_indent
+  end
 
-		if prev_tag_name and prev_tag_type == "open" and should_indent(prev_tag_name) then
-			local result = prev_indent + sw
-			if config.html_debug then
-				print("    HTML SIMPLE: Content after " .. prev_tag_name .. " = " .. result)
-			end
-			return result
-		end
-	end
+  -- Handle text content - check if previous line was opening block tag
+  if current_type == "text" then
+    debug_log(config, "Text content, checking previous line for indentation")
 
-	-- Handle DOCTYPE
-	if line_clean:find("^%s*<!DOCTYPE") then
-		if config.html_debug then
-			print("    HTML SIMPLE: DOCTYPE = 0")
-		end
-		return 0
-	end
+    if prev_line_clean ~= "" then
+      local prev_tag, prev_type = analyze_line(prev_line_clean)
+      debug_log(config, "Previous line analysis: tag='" .. tostring(prev_tag) .. "' type='" .. prev_type .. "'")
 
-	-- Default case
-	if config.html_debug then
-		print("    HTML SIMPLE: Default case = " .. prev_indent)
-	end
-	return prev_indent
+      if prev_type == "opening" and prev_tag and BLOCK_TAGS[prev_tag] then
+        local result = prev_indent + sw
+        debug_log(config, "Content after opening block tag " .. prev_tag .. ": " .. prev_indent .. " + " .. sw .. " = " .. result)
+        return result
+      end
+    end
+
+    debug_log(config, "Text content with no special indentation, maintaining: " .. prev_indent)
+    return prev_indent
+  end
+
+  -- Check if we should indent because previous line was opening block tag
+  if prev_line_clean ~= "" then
+    local prev_tag, prev_type = analyze_line(prev_line_clean)
+    debug_log(config, "Checking if should indent after previous line: tag='" .. tostring(prev_tag) .. "' type='" .. prev_type .. "'")
+
+    if prev_type == "opening" and prev_tag and BLOCK_TAGS[prev_tag] then
+      local result = prev_indent + sw
+      debug_log(config, "Should indent after opening block tag " .. prev_tag .. ": " .. prev_indent .. " + " .. sw .. " = " .. result)
+      return result
+    end
+  end
+
+  -- Default case
+  debug_log(config, "Default case, maintaining previous indent: " .. prev_indent)
+  return prev_indent
 end
 
 return M
