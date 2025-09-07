@@ -1,4 +1,4 @@
--- enhanced-php-indent.nvim - Content-Aware Language Detection (SYNTAX FIXED)
+-- enhanced-php-indent.nvim - Content-Aware Language Detection (CLEAN SYNTAX)
 local M = {}
 
 -- Load the original plugin
@@ -42,99 +42,147 @@ local html_indent = require('enhanced-php-indent.frontend.html')
 local css_indent = require('enhanced-php-indent.frontend.css')
 local js_indent = require('enhanced-php-indent.frontend.javascript')
 
--- FIXED: Language detection patterns with proper Lua syntax
+-- Simple and reliable pattern detection functions
 local function has_php_patterns(line)
-  if not line then return false end
+  if not line or line == "" then 
+    return false 
+  end
 
-  -- PHP variable: $variable
-  if line:find('%$[%w_]+') then return true end
+  -- PHP variable pattern
+  if line:find('%$[%w_]+') then 
+    return true 
+  end
 
-  -- PHP arrow operator: ->
-  if line:find('%-[>]') then return true end
+  -- PHP arrow operator
+  if line:find('%-%-') then 
+    return false 
+  end
+  if line:find('%-[>]') then 
+    return true 
+  end
 
   -- PHP tags
-  if line:find('<%?php') or line:find('<%?=') then return true end
+  if line:find('<%?php') then 
+    return true 
+  end
+  if line:find('<%?=') then 
+    return true 
+  end
 
-  -- PHP keywords
-  local php_keywords = {'function', 'class', 'public', 'private', 'protected', 'namespace', 'use', 'array'}
-  for _, keyword in ipairs(php_keywords) do
-    if line:find('%f[%a]' .. keyword .. '%f[%A]') then return true end
+  -- PHP function keyword
+  if line:find('function%s+[%w_]+%s*%(') then 
+    return true 
+  end
+
+  -- PHP class keyword
+  if line:find('class%s+[%w_]+') then 
+    return true 
   end
 
   return false
 end
 
 local function has_javascript_patterns(line)
-  if not line then return false end
+  if not line or line == "" then 
+    return false 
+  end
 
   -- JavaScript variable declarations
-  if line:find('%f[%a]let%s+[%w_]') or 
-     line:find('%f[%a]const%s+[%w_]') or 
-     line:find('%f[%a]var%s+[%w_]') then 
+  if line:find('let%s+[%w_]') then 
+    return true 
+  end
+  if line:find('const%s+[%w_]') then 
+    return true 
+  end
+  if line:find('var%s+[%w_]') then 
     return true 
   end
 
-  -- JavaScript-specific objects
-  if line:find('console%.') or 
-     line:find('document%.') or 
-     line:find('window%.') then 
+  -- JavaScript specific methods
+  if line:find('console%.') then 
+    return true 
+  end
+  if line:find('document%.') then 
+    return true 
+  end
+  if line:find('window%.') then 
     return true 
   end
 
-  -- JavaScript keywords
-  local js_keywords = {'function', 'if', 'for', 'while', 'switch', 'case', 'default', 'return'}
-  for _, keyword in ipairs(js_keywords) do
-    if line:find('%f[%a]' .. keyword .. '%f[%A]') then return true end
+  -- JavaScript function patterns
+  if line:find('function%s*%(') then 
+    return true 
+  end
+  if line:find('=>') then 
+    return true 
   end
 
   return false
 end
 
 local function has_css_patterns(line)
-  if not line then return false end
+  if not line or line == "" then 
+    return false 
+  end
 
-  -- CSS properties: property: value;
-  if line:find('^%s*[%w%-]+%s*:%s*[^;]+;?') then return true end
+  -- CSS property pattern
+  if line:find('^%s*[%w%-]+%s*:%s*[^;]+') then 
+    return true 
+  end
 
-  -- CSS selectors ending with {
-  if line:find('^%s*[%w%.#:%-%[%]%s,>+~*]+%s*{%s*$') then return true end
+  -- CSS selector with opening brace
+  if line:find('{%s*$') and not line:find('<%?') then 
+    return true 
+  end
 
-  -- CSS at-rules
-  if line:find('^%s*@[%w%-]+') then return true end
+  -- CSS at-rule
+  if line:find('^%s*@[%w%-]+') then 
+    return true 
+  end
 
   return false
 end
 
 local function has_html_patterns(line)
-  if not line then return false end
+  if not line or line == "" then 
+    return false 
+  end
 
-  -- HTML tags
-  if line:find('<%/?[%w%-]+[^>]*>') then return true end
+  -- HTML opening tag
+  if line:find('<[%w%-]+[^>]*>') then 
+    return true 
+  end
+
+  -- HTML closing tag
+  if line:find('</[%w%-]+>') then 
+    return true 
+  end
 
   -- DOCTYPE
-  if line:find('<!DOCTYPE') then return true end
-
-  -- HTML attributes
-  if line:find('[%w%-]+%s*=%s*["'][^"']*["']') then return true end
+  if line:find('<!DOCTYPE') then 
+    return true 
+  end
 
   return false
 end
 
--- FIXED: Content-aware language detection with proper scoring
+-- Content analysis with proper scoring
 local function analyze_content_for_language(start_lnum, scan_lines)
-  local scores = {php = 0, javascript = 0, css = 0, html = 0}
+  local scores = {
+    php = 0, 
+    javascript = 0, 
+    css = 0, 
+    html = 0
+  }
+
   local total_lines = vim.fn.line('$')
   local end_lnum = math.min(total_lines, start_lnum + scan_lines - 1)
 
   for lnum = start_lnum, end_lnum do
     local line = vim.fn.getline(lnum)
-    if not line then break end
+    if line and line ~= "" then
+      local line_clean = vim.trim(line)
 
-    local line_clean = vim.trim(line)
-    if line_clean == "" then
-      -- Skip empty lines
-    else
-      -- Score each language based on patterns
       if has_php_patterns(line_clean) then
         scores.php = scores.php + 2
       end
@@ -156,12 +204,14 @@ local function analyze_content_for_language(start_lnum, scan_lines)
   return scores
 end
 
--- FIXED: Language detection with proper context checking
+-- Language detection with proper context checking
 local function detect_language_content_aware(lnum)
   local line = vim.fn.getline(lnum)
-  if not line then return 'html' end
+  if not line then 
+    return 'html' 
+  end
 
-  -- First check for explicit context markers within 5 lines
+  -- Check for explicit context markers within 5 lines
   local context_search = 5
   local total_lines = vim.fn.line('$')
 
@@ -174,19 +224,25 @@ local function detect_language_content_aware(lnum)
         for j = i, math.min(total_lines, i + 20) do
           local php_line = vim.fn.getline(j)
           if php_line and php_line:find('%?>') then
-            if lnum >= i and lnum <= j then return 'php' end
+            if lnum >= i and lnum <= j then 
+              return 'php' 
+            end
             break
           end
         end
-        if lnum >= i then return 'php' end -- Unclosed PHP
+        if lnum >= i then 
+          return 'php' 
+        end
       end
 
-      -- Script context markers  
+      -- Script context markers
       if check_line:find('<script[^>]*>%s*$') then
         for j = i + 1, math.min(total_lines, i + 50) do
           local script_line = vim.fn.getline(j)
           if script_line and script_line:find('</script>') then
-            if lnum > i and lnum < j then return 'javascript' end
+            if lnum > i and lnum < j then 
+              return 'javascript' 
+            end
             break
           end
         end
@@ -197,7 +253,9 @@ local function detect_language_content_aware(lnum)
         for j = i + 1, math.min(total_lines, i + 50) do
           local style_line = vim.fn.getline(j)
           if style_line and style_line:find('</style>') then
-            if lnum > i and lnum < j then return 'css' end
+            if lnum > i and lnum < j then 
+              return 'css' 
+            end
             break
           end
         end
@@ -220,11 +278,6 @@ local function detect_language_content_aware(lnum)
     end
   end
 
-  -- Fallback to HTML if no clear winner
-  if max_score == 0 then
-    detected_language = 'html'
-  end
-
   return detected_language
 end
 
@@ -237,7 +290,9 @@ local function enhanced_indent_content_aware()
   local lnum = vim.v.lnum
   local line = vim.fn.getline(lnum)
 
-  if not line then return _G.EnhancedPhpIndentOriginal() end
+  if not line then 
+    return _G.EnhancedPhpIndentOriginal() 
+  end
 
   local line_clean = vim.trim(line)
 
@@ -264,25 +319,33 @@ local function enhanced_indent_content_aware()
   if context == 'html' and M.config.enable_html_indent then
     local result = html_indent.get_indent(lnum, M.config)
     if result ~= nil then 
-      if M.config.frontend_debug then print("  HTML result: " .. result) end
+      if M.config.frontend_debug then 
+        print("  HTML result: " .. result) 
+      end
       return result 
     end
   elseif context == 'css' and M.config.enable_css_indent then
     local result = css_indent.get_indent(lnum, M.config)
     if result ~= nil then 
-      if M.config.frontend_debug then print("  CSS result: " .. result) end
+      if M.config.frontend_debug then 
+        print("  CSS result: " .. result) 
+      end
       return result 
     end
   elseif context == 'javascript' and M.config.enable_js_indent then
     local result = js_indent.get_indent(lnum, M.config)
     if result ~= nil then 
-      if M.config.frontend_debug then print("  JS result: " .. result) end
+      if M.config.frontend_debug then 
+        print("  JS result: " .. result) 
+      end
       return result 
     end
   end
 
   -- Fallback to original PHP indentation
-  if M.config.frontend_debug then print("  Using PHP fallback") end
+  if M.config.frontend_debug then 
+    print("  Using PHP fallback") 
+  end
   return _G.EnhancedPhpIndentOriginal()
 end
 
