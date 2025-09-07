@@ -1,4 +1,4 @@
--- HTML indentation for enhanced-php-indent.nvim (FIXED - no goto statements)
+-- HTML indentation for enhanced-php-indent.nvim (IMPROVED - better context handling)
 local M = {}
 
 -- Check if tag is a block-level tag that should indent
@@ -54,7 +54,7 @@ local function parse_tag(line_clean)
   return nil, nil
 end
 
--- FIXED: Find matching opening tag - no goto statements
+-- Find matching opening tag for a closing tag (IMPROVED)
 local function find_opening_tag(lnum, closing_tag_name, config)
   local search_lnum = lnum - 1
   local tag_count = 1
@@ -64,8 +64,13 @@ local function find_opening_tag(lnum, closing_tag_name, config)
     local line = vim.fn.getline(search_lnum)
     local line_clean = vim.trim(line)
 
-    -- Skip empty lines and PHP code using if-else instead of goto
-    if line_clean ~= "" and not line_clean:find('^<%?') then
+    -- Skip empty lines, PHP code, script/style content
+    if line_clean ~= "" and 
+       not line_clean:find('^<%?') and 
+       not line_clean:find('^%?>') and
+       not line_clean:find('^/[*/]') and -- Skip comments
+       not line_clean:find('^[%w%.#]') then -- Skip CSS/JS content
+
       local tag_name, tag_type = parse_tag(line_clean)
 
       if tag_name and tag_name:lower() == closing_tag_name:lower() then
@@ -86,7 +91,7 @@ local function find_opening_tag(lnum, closing_tag_name, config)
   return nil
 end
 
--- Main HTML indentation function
+-- IMPROVED: Main HTML indentation function
 function M.get_indent(lnum, config)
   local line = vim.fn.getline(lnum)
   local line_clean = vim.trim(line)
@@ -100,8 +105,13 @@ function M.get_indent(lnum, config)
     return prev_indent
   end
 
-  -- Handle PHP code in HTML context (preserve PHP indentation)
-  if line_clean:find('^<%?') then
+  -- IMPROVED: Handle PHP code in HTML context (preserve PHP indentation)
+  if line_clean:find('^<%?') or line_clean:find('^%?>') then
+    return prev_indent
+  end
+
+  -- IMPROVED: Handle HTML comments
+  if line_clean:find('^<!--') or line_clean:find('^%-->') then
     return prev_indent
   end
 
@@ -118,7 +128,7 @@ function M.get_indent(lnum, config)
         return math.max(prev_indent - sw, base_indent)
       end
     else
-      -- Inline closing tags don't change indentation
+      -- Inline closing tags maintain indentation
       return prev_indent
     end
   end
@@ -128,7 +138,7 @@ function M.get_indent(lnum, config)
     return prev_indent
   end
 
-  -- Handle content after opening tags
+  -- IMPROVED: Handle content after opening tags
   if prev_lnum > 0 then
     local prev_line = vim.fn.getline(prev_lnum)
     local prev_line_clean = vim.trim(prev_line)
@@ -141,10 +151,24 @@ function M.get_indent(lnum, config)
     end
   end
 
-  -- Handle attributes on multiple lines
-  if line_clean:match('^[%w%-]+=') or line_clean:match('^[%w%-]+%s*=') then
-    -- Attribute continuation
+  -- Handle attributes on multiple lines (IMPROVED)
+  if line_clean:match('^[%w%-]+=') or line_clean:match('^[%w%-]+%s*=') or line_clean:match('^[%w%-]+$') then
+    -- Look for opening tag to align with
+    local search_lnum = prev_lnum
+    while search_lnum > 0 and search_lnum > (lnum - 10) do
+      local search_line = vim.trim(vim.fn.getline(search_lnum))
+      local search_tag_name, search_tag_type = parse_tag(search_line)
+      if search_tag_name and search_tag_type == 'opening' then
+        return vim.fn.indent(search_lnum) + sw + base_indent
+      end
+      search_lnum = search_lnum - 1
+    end
     return prev_indent + sw
+  end
+
+  -- Handle DOCTYPE and other declarations
+  if line_clean:match('^<!DOCTYPE') or line_clean:match('^<!%[CDATA%[') then
+    return base_indent
   end
 
   -- Default: maintain previous indentation
