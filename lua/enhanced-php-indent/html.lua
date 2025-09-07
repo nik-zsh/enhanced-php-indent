@@ -1,5 +1,5 @@
 -- FILE: lua/enhanced-php-indent/html.lua
--- Simplified HTML Extension - standalone, no interference with PHP
+-- Fixed HTML Extension - removed goto scoping issue
 local M = {}
 
 -- HTML configuration
@@ -27,7 +27,7 @@ M.config = {
 local function get_context_type(lnum)
   local search_lnum = lnum
   local in_php = false
-  local max_search = 30  -- Reduced search for performance
+  local max_search = 30
 
   while search_lnum > 0 and search_lnum > (lnum - max_search) do
     local line = vim.fn.getline(search_lnum)
@@ -93,37 +93,38 @@ local function is_inline_html_tag(tag_name, config)
   return false
 end
 
--- Find matching HTML opening tag
+-- FIXED: Find matching HTML opening tag - removed goto
 local function find_html_opening_tag(lnum, closing_tag)
   local search_lnum = lnum - 1
   local tag_count = 1
-  local max_search = 50  -- Limit search scope
+  local max_search = 50
 
   while search_lnum > 0 and tag_count > 0 and (lnum - search_lnum) < max_search do
     local line = vim.fn.getline(search_lnum)
     local line_clean = vim.trim(line)
 
-    -- Skip PHP blocks when looking for HTML tags
-    if get_context_type(search_lnum) == 'php' then
+    -- FIXED: Check context first, then continue if PHP
+    local context = get_context_type(search_lnum)
+    if context == 'php' then
+      -- Skip PHP blocks - just continue to next iteration
       search_lnum = search_lnum - 1
-      goto continue
-    end
+    else
+      -- Process HTML line
+      local tag_name, tag_type = parse_html_tag(line_clean)
 
-    local tag_name, tag_type = parse_html_tag(line_clean)
-
-    if tag_name and tag_name == closing_tag then
-      if tag_type == 'closing' then
-        tag_count = tag_count + 1
-      elseif tag_type == 'opening' then
-        tag_count = tag_count - 1
-        if tag_count == 0 then
-          return search_lnum
+      if tag_name and tag_name == closing_tag then
+        if tag_type == 'closing' then
+          tag_count = tag_count + 1
+        elseif tag_type == 'opening' then
+          tag_count = tag_count - 1
+          if tag_count == 0 then
+            return search_lnum
+          end
         end
       end
-    end
 
-    ::continue::
-    search_lnum = search_lnum - 1
+      search_lnum = search_lnum - 1
+    end
   end
 
   return nil
