@@ -1,4 +1,4 @@
--- enhanced-php-indent setup with HTML support
+-- enhanced-php-indent setup with HTML support (FIXED CONTEXT DETECTION)
 local M = {}
 
 -- Load the original plugin and HTML module
@@ -86,72 +86,89 @@ local html_defaults = {
     html_debug = false,
 }
 
--- Simple context detection (PHP vs HTML)
+-- FIXED: Simple and reliable context detection
 local function detect_context(lnum)
     local line = vim.fn.getline(lnum)
     if not line then
         return "html"
     end
 
-    -- Check current line first
-    if line:find("<%?php") or line:find("<%?=") then
+    local line_clean = vim.trim(line)
+
+    -- RULE 1: If current line has PHP opening tag, it's PHP
+    if line_clean:find("<%?php") or line_clean:find("<%?=") or line_clean:find("<%?%s") then
         return "php"
     end
 
-    -- Search backwards for context
-    for i = lnum - 1, math.max(1, lnum - 10), -1 do
+    -- RULE 2: If current line has PHP closing tag, it's PHP (the closing line itself)
+    if line_clean:find("%?>") then
+        return "php"
+    end
+
+    -- RULE 3: Search backwards to find the most recent context marker
+    local search_limit = math.max(1, lnum - 30)
+    local found_php_open = false
+    local found_php_close = false
+
+    for i = lnum - 1, search_limit, -1 do
         local check_line = vim.fn.getline(i)
         if check_line then
-            -- PHP opening tag
-            if check_line:find("<%?php") or check_line:find("<%?=") then
-                -- Look for closing tag
-                for j = i, lnum do
-                    local php_line = vim.fn.getline(j)
-                    if php_line and php_line:find("%?>") then
-                        if lnum > j then
-                            return "html" -- After PHP closing tag
-                        else
-                            return "php" -- Inside PHP block
-                        end
-                    end
-                end
-                return "php" -- PHP not closed, assume PHP context
+            local check_clean = vim.trim(check_line)
+
+            -- Found PHP closing tag first - we're in HTML context
+            if not found_php_open and check_clean:find("%?>") then
+                found_php_close = true
+                break
             end
 
-            -- PHP closing tag
-            if check_line:find("%?>") then
-                return "html" -- After PHP closing tag
+            -- Found PHP opening tag first - we're in PHP context
+            if
+                not found_php_close
+                and (check_clean:find("<%?php") or check_clean:find("<%?=") or check_clean:find("<%?%s"))
+            then
+                found_php_open = true
+                break
             end
         end
     end
 
-    return "html" -- Default to HTML
+    -- Return context based on what we found
+    if found_php_open and not found_php_close then
+        return "php"
+    else
+        return "html"
+    end
 end
 
--- Enhanced indent function with HTML support
+-- Enhanced indent function with FIXED HTML support
 local function enhanced_indent_with_html()
     local lnum = vim.v.lnum
-    local context = detect_context(lnum)
-
-    if M.config.html_debug then
-        local line = vim.fn.getline(lnum)
-        print("Enhanced: Line " .. lnum .. " context=" .. context .. " line=" .. vim.trim(line))
+    local line = vim.fn.getline(lnum)
+    if not line then
+        return _G.EnhancedPhpIndentOriginal()
     end
 
-    -- Use HTML indentation for HTML context
+    local context = detect_context(lnum)
+    local line_clean = vim.trim(line)
+
+    if M.config.html_debug then
+        print("Enhanced: Line " .. lnum .. " context=" .. context .. " content='" .. line_clean .. "'")
+    end
+
+    -- FIXED: Apply HTML indentation ONLY for HTML context
     if context == "html" and M.config.enable_html_indent then
         local result = html_indent.get_indent(lnum, M.config)
         if result ~= nil then
             if M.config.html_debug then
-                print("  HTML result: " .. result)
+                print("  Using HTML indent: " .. result)
             end
             return result
         end
     end
 
-    -- Fallback to PHP indentation
+    -- FIXED: Apply PHP indentation for PHP context OR fallback
     if M.config.html_debug then
-        print("  Using PHP indentation")
+        print("  Using PHP indent (context=" .. context .. ")")
     end
     return _G.EnhancedPhpIndentOriginal()
 end
@@ -176,6 +193,7 @@ function M.setup_with_html(opts)
 
     if final_config.html_debug then
         print("Enhanced PHP Indent with HTML support loaded")
+        print("  HTML indentation: " .. tostring(final_config.enable_html_indent))
     end
 end
 
